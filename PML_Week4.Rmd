@@ -1,0 +1,121 @@
+---
+title: "Practical Machine Learning Week 4 Assignment"
+author: "Abhijeet"
+date: "May 26, 2018"
+output:
+  html_document:
+    keep_md: yes
+---
+## Prediction Assignment
+
+### Overview
+
+The following project takes a closer look at the data collected by fitness and health tracking digital devices of the modern era. It tracks the body movements and of modern day tech enthusiasts and geeks to analyse their personal activities inexpensively.
+
+Through this analysis, we make use of Machine Learning techniques primarily through the Caret package to analyse trends in the collected data.  
+
+## Data Preprocessing  
+```{r data_prep, results='hide'}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(corrplot)
+```
+
+### Download the Data
+```{r datdow, cache = T}
+trainUrl <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+trainFile <- "./data/pml-training.csv"
+testFile  <- "./data/pml-testing.csv"
+if (!file.exists("./data")) {
+  dir.create("./data")
+}
+if (!file.exists(trainFile)) {
+  download.file(trainUrl, destfile=trainFile, method="curl")
+  download.file(testUrl, destfile=testFile, method="curl")
+}
+``` 
+
+### Read the Data
+After downloading the data from the data source, we can read the two csv files into two data frames.  
+```{r readdat, cache = T}
+training <- read.csv("./data/pml-training.csv")
+testing <- read.csv("./data/pml-testing.csv")
+
+dim(training)
+dim(testing)
+```
+The training data set contains 19622 observations and 160 variables, while the testing data set contains 20 observations and 160 variables. The "classe" variable in the training set is the outcome to predict. 
+
+### Clean the data
+In this step, we will clean the data and get rid of observations with missing values as well as some meaningless variables.
+```{r casescomp, cache = T}
+sum(complete.cases(training))
+```
+
+First, we remove columns that contain NA missing values.
+```{r NArem, cache = T}
+training <- training[, colSums(is.na(training)) == 0] 
+testing <- testing[, colSums(is.na(testing)) == 0] 
+```  
+
+Next, we get rid of some columns that do not contribute much to the accelerometer measurements.
+```{r colrem, cache = T}
+classe <- training$classe
+trainRemove <- grepl("^X|timestamp|window", names(training))
+training <- training[, !trainRemove]
+cleantr <- training[, sapply(training, is.numeric)]
+cleantr$classe <- classe
+testRemove <- grepl("^X|timestamp|window", names(testing))
+testing <- testing[, !testRemove]
+cleantst <- testing[, sapply(testing, is.numeric)]
+```
+Now, the cleaned training data set contains 19622 observations and 53 variables, while the testing data set contains 20 observations and 53 variables. The "classe" variable is still in the cleaned training set.
+
+### Slice the data
+Then, we can split the cleaned training set into a pure training data set (70%) and a validation data set (30%). We will use the validation data set to conduct cross validation in future steps.  
+```{r slidedat, cache = T}
+set.seed(22519) # For reproducibile purpose
+inTrain <- createDataPartition(cleantr$classe, p=0.70, list=F)
+trainData <- cleantr[inTrain, ]
+testData <- cleantr[-inTrain, ]
+```
+
+## Data Modeling
+We fit the predictive model using Random Forest since it automatically selects important variables and is robust to correlated covariates & outliers in general.
+
+```{r modelmake, cache = T}
+model <- randomForest(classe~.,data=trainData)
+print(model)
+```
+
+Then, we estimate the performance of the model on the validation data set.  
+```{r cmperf, cache = T}
+predictRf <- predict(model, testData)
+confusionMatrix(testData$classe, predictRf)
+```
+
+```{r accurperf, cache = T}
+accuracy <- postResample(predictRf, testData$classe)
+accuracy
+oose <- 1 - as.numeric(confusionMatrix(testData$classe, predictRf)$overall[1])
+oose
+```
+
+## Predicting for Test Data Set
+Now, we apply the model to the original testing data set to find the predictions.
+```{r predtest, cache = T}
+result <- predict(model, cleantst[, -length(names(cleantst))])
+result
+```  
+
+## Appendix: Decision Tree Visualization
+
+```{r app2}
+
+treeModel <- rpart(classe ~ ., data=trainData, method="class")
+prp(treeModel, box.palette = "BlGnYl", branch.col = "Red", tweak = 1.2, legend.x = -5, legend.y = -3)
+
+```
